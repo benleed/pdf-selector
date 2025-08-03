@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PDF Text Selector</title>
+  <style>
+
+
+
+    /* File input container */
+    #fileContainer {
+      max-width: 100px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      border: 1px solid #ccc;
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    #fileInput {
+      display: none;
+    }
+    #fileLabel {
+      cursor: pointer;
+      background-color: #1976d2;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 14px;
+      user-select: none;
+    }
+
+    /* Tag buttons */
+    #tagButtons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    #tagButtons button {
+      padding: 6px 12px;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      background-color: white;
+      border-radius: 4px;
+      cursor: pointer;
+      user-select: none;
+      transition: background-color 0.2s;
+    }
+    #tagButtons button.selected {
+      background-color: #1976d2;
+      color: white;
+      border-color: #1976d2;
+    }
+    #tagButtons button:hover:not(.selected) {
+      background-color: #e0e0e0;
+    }
+
+    /* Page navigation */
+    #pageNav {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 14px;
+    }
+    #pageNav button {
+      padding: 6px 12px;
+      cursor: pointer;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      background-color: white;
+      user-select: none;
+      transition: background-color 0.2s;
+    }
+    #pageNav button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #pageNav button:hover:not(:disabled) {
+      background-color: #e0e0e0;
+    }
+    #pageInfo {
+      min-width: 120px;
+      text-align: center;
+    }
+
+
+    /* Text layer styles */
+    #textLayer {
+      position: relative;
+      background-color: #f9f9f9;
+      font-size: 14px;
+      padding: 5px;
+      cursor: pointer;
+    }
+
+    /* Paragraph styles */
+    .paragraph {
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 4px;
+      margin-bottom: 6px;
+      user-select: none;
+    }
+    .text-item:hover {
+      background-color:#a0c4ff;
+    }
+    .selected {
+      background-color:#ffc6a0;
+    }
+    /* Add hovered-block style for previewing block selection */
+    .hovered-block {
+      background-color: #ffe6b0;
+    }
+
+    /* Output area */
+    #output {
+      font-family: monospace;
+      white-space: pre-wrap;
+      padding: 10px;
+      background: #fff;
+    }
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+    }
+
+    #topControls {
+      flex-shrink: 0;
+      padding: 8px;
+      background: #f7f7f7;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+    }
+
+    .flex {
+      flex: 1 1 auto; /* fill remaining vertical space */
+      display: flex;
+      gap: 10px;
+      min-height: 0; /* important for Firefox to allow shrinking */
+    }
+
+    #pdfCanvas, #textLayer, #output {
+      flex: 1 1 0;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      overflow-y: auto;
+    }
+
+    /* Make canvas container a flex container to center the canvas */
+    #pdfCanvas {
+      display: block;
+      max-width: 100%;
+      background: white;
+      
+    }
+    * {
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <div id="topControls">
+    <div id="fileContainer" title="Select PDF file">
+      <label id="fileLabel" for="fileInput">Choose PDF</label>
+      <input type="file" id="fileInput" accept="application/pdf" />
+      <span id="fileName" style="margin-left: 8px;"></span>
+    </div>
+
+    <div id="pageNav">
+      <button id="prevBtn" disabled>Previous [a]</button>
+      <button id="nextBtn" disabled>Next [d]</button>
+      <span id="pageInfo">Page 0 of 0</span>
+      <button id="commitBtn">Commit [w]</button>
+      <button id="clearBtn">Clear [s]</button>
+    </div>
+    <div id="tagButtons" role="group" aria-label="Select tag">
+      <button data-tag="p" class="selected">&lt;p&gt; [1]</button>
+      <button data-tag="blockquote">&lt;blockquote&gt; [2]</button>
+      <button data-tag="h1">&lt;h1&gt; [3]</button>
+      <button data-tag="h2">&lt;h2&gt; [4]</button>
+      <button data-tag="h3">&lt;h3&gt; [5]</button>
+      <button data-tag="li">&lt;li&gt; [6]</button>
+    </div>
+    <input type="number" step="1" id="fontSizeInput" value="14" min="8" max="72" style="width: 60px; margin-left: 10px;" onchange="renderPage(currentPage)" />
+  </div>
+
+  <div class="flex">
+    <canvas id="pdfCanvas"></canvas>
+    <div id="textLayer"></div>
+    <div id="output"></div>
+
+  </div>
+
+  <!-- PDF.js from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+  <script>
+    const fileInput = document.getElementById('fileInput');
+    const fileNameSpan = document.getElementById('fileName');
+    const canvas = document.getElementById('pdfCanvas');
+    const ctx = canvas.getContext('2d');
+    const textLayer = document.getElementById('textLayer');
+    const output = document.getElementById('output');
+    const tagButtons = document.querySelectorAll('#tagButtons button');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const pageInfo = document.getElementById('pageInfo');
+    const fontSizeInput = document.getElementById('fontSizeInput');
+    const commitBtn = document.getElementById('commitBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    let outputText = '';
+
+    let pdf = null;
+    let currentPage = 1;
+    let totalPages = 0;
+    let selectedTag = 'p';
+
+
+
+    // Update file name display (truncate if too long)
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) {
+        fileNameSpan.textContent = '';
+        return;
+      }
+      let name = file.name;
+      if (name.length > 20) {
+        name = name.slice(0, 10) + '...' + name.slice(-7);
+      }
+      fileNameSpan.textContent = name;
+    });
+    tagButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        tagButtons.forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedTag = btn.getAttribute('data-tag');
+        copyText(`_changeTag:${selectedTag}`);
+      });
+    });
+
+    // Load PDF file and render first page
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const fileReader = new FileReader();
+      fileReader.onload = async function () {
+        const typedArray = new Uint8Array(this.result);
+        pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
+        totalPages = pdf.numPages;
+        currentPage = 1;
+        updatePageNav();
+        renderPage(currentPage);
+      };
+      fileReader.readAsArrayBuffer(file);
+    });
+
+    prevBtn.addEventListener('click', () => {
+      if (currentPage > 1) {
+        currentPage--;
+        updatePageNav();
+        renderPage(currentPage);
+      }
+    });
+
+    nextBtn.addEventListener('click', () => {
+      if (currentPage < totalPages) {
+        currentPage++;
+        updatePageNav();
+        renderPage(currentPage);
+      }
+    });
+    async function copyText(text) {
+      try {
+        await navigator.clipboard.writeText(text.trim());
+      } catch (err) {
+        // fallback for older browsers
+        const textarea = document.createElement('textarea');
+        textarea.value = text.trim();
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+    }
+    commitBtn.addEventListener('click', async () => {
+      if (outputText.trim()) {
+        if (selectedTag == 'li') {
+          outputText = `<ul>${outputText.trim()}</ul>`;
+        }
+        await copyText(outputText.trim());
+      }
+      // Clear selection and output
+      outputText = '';
+      output.innerText = '';
+      // Remove selected class from all spans
+      const textItems = document.querySelectorAll('.text-item.selected');
+      textItems.forEach(s => s.classList.remove('selected'));
+      // Reset selection indices if possible
+      if (typeof firstSelectedIdx !== 'undefined') firstSelectedIdx = null;
+      if (typeof lastSelectedIdx !== 'undefined') lastSelectedIdx = null;
+    });
+
+    clearBtn.addEventListener('click', () => {
+      outputText = '';
+      output.innerText = '';
+      const selectedItems = document.querySelectorAll('.text-item.selected');
+      selectedItems.forEach(item => item.classList.remove('selected'));
+      firstSelectedIdx = null;
+      lastSelectedIdx = null;
+    });
+
+    function updatePageNav() {
+      pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+      prevBtn.disabled = currentPage <= 1;
+      nextBtn.disabled = currentPage >= totalPages;
+    }
+
+    async function renderPage(pageNum) {
+      const page = await pdf.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 1.5 });
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      // Render PDF to canvas
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      // Get and group text content
+      const textContent = await page.getTextContent();
+      textLayer.innerHTML = '';
+      let firstSelectedIdx = null;
+      let lastSelectedIdx = null;
+      const spans = [];
+      textContent.items.forEach((item, idx) => {
+        const span = document.createElement('div');
+        span.textContent = item.str;
+        span.style.fontSize = fontSizeInput.value + 'px';
+        span.classList.add('text-item');
+        span.dataset.idx = idx;
+
+        // Hover logic for block preview
+        span.addEventListener('mouseenter', () => {
+          if (firstSelectedIdx !== null && lastSelectedIdx === null) {
+            let start = Math.min(firstSelectedIdx, idx);
+            let end = Math.max(firstSelectedIdx, idx);
+            spans.forEach((s, i) => {
+              if (i >= start && i <= end) {
+                s.classList.add('hovered-block');
+              } else {
+                s.classList.remove('hovered-block');
+              }
+            });
+          }
+        });
+        span.addEventListener('mouseleave', () => {
+          spans.forEach(s => s.classList.remove('hovered-block'));
+        });
+
+        span.addEventListener('click', () => {
+          if (firstSelectedIdx === null) {
+            // First click
+            firstSelectedIdx = idx;
+            lastSelectedIdx = null;
+            spans.forEach(s => s.classList.remove('selected'));
+            span.classList.add('selected');
+          } else if (lastSelectedIdx === null) {
+            // Second click
+            lastSelectedIdx = idx;
+            spans.forEach(s => s.classList.remove('selected'));
+            let start = Math.min(firstSelectedIdx, lastSelectedIdx);
+            let end = Math.max(firstSelectedIdx, lastSelectedIdx);
+            let blockText = '';
+            for (let i = start; i <= end; i++) {
+              spans[i].classList.add('selected');
+              blockText += textContent.items[i].str + ' ';
+            }
+            if (selectedTag == 'li') {
+              blockText = `<li>${blockText.trim()}</li>`;
+            }
+            outputText += blockText.trim() + ' ';
+            output.innerText = outputText;
+          } else {
+            // Third click resets selection
+            firstSelectedIdx = idx;
+            lastSelectedIdx = null;
+            spans.forEach(s => s.classList.remove('selected'));
+            span.classList.add('selected');
+          }
+        });
+        textLayer.appendChild(span);
+        spans.push(span);
+      });
+    }
+    // Hotkey support
+    document.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      switch (e.key) {
+        case 'a':
+          if (!prevBtn.disabled) prevBtn.click();
+          break;
+        case 'd':
+          if (!nextBtn.disabled) nextBtn.click();
+          break;
+        case 'w':
+          commitBtn.click();
+          break;
+        case 's':
+          clearBtn.click();
+          break;
+        case '1':
+          tagButtons[0].click();
+          break;
+        case '2':
+          tagButtons[1].click();
+          break;
+        case '3':
+          tagButtons[2].click();
+          break;
+        case '4':
+          tagButtons[3].click();
+          break;
+        case '5':
+          tagButtons[4].click();
+          break;
+        case '6':
+          tagButtons[5].click();
+          break;
+      }
+    });
+  </script>
+</body>
+</html>
