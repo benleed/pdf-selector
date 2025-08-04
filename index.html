@@ -112,6 +112,10 @@
     .hovered-block {
       background-color: #ffe6b0;
     }
+    .end-sentence {
+      /* border: 1px solid #0f9808; */
+      font-weight: bold;
+    }
     /* Selection rectangle for canvas */
     .canvas-selection-rect {
       position: absolute;
@@ -439,9 +443,10 @@
         span.style.fontSize = fontSizeInput.value + 'px';
         span.classList.add('text-item');
         span.dataset.idx = idx;
-        //TODO: bold the text if end of line and ends with punctuation
-        if (item.str.match(/[\.\?\!]\s*$/))
-          span.style.fontWeight = 'bold';
+
+        if (item.str.match(/[\.\?\!\:\'\"]\s*$|(?<=[\.\?\!])[)\]]\s*$/)) {
+          span.classList.add('end-sentence');
+        }
 
         // Hover logic for block preview
         span.addEventListener('mouseenter', () => {
