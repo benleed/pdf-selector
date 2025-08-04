@@ -112,6 +112,14 @@
     .hovered-block {
       background-color: #ffe6b0;
     }
+    /* Selection rectangle for canvas */
+    .canvas-selection-rect {
+      position: absolute;
+      border: 2px dashed #1976d2;
+      background: rgba(25, 118, 210, 0.1);
+      pointer-events: none;
+      z-index: 1000;
+    }
 
     /* Output area */
     #output {
@@ -337,12 +345,94 @@
       // Render PDF to canvas
       await page.render({ canvasContext: ctx, viewport }).promise;
 
-      // Get and group text content
+      // Add rectangular selection tool to canvas
+      let isSelecting = false;
+      let startX, startY, endX, endY;
+      let selectionRect = null;
+
+      // Remove previous selection overlay if any
+      if (canvas.parentNode.querySelector('.canvas-selection-rect')) {
+        canvas.parentNode.querySelector('.canvas-selection-rect').remove();
+      }
+
+      canvas.onmousedown = function(e) {
+        isSelecting = true;
+        const rect = canvas.getBoundingClientRect();
+        startX = e.clientX - rect.left;
+        startY = e.clientY - rect.top;
+
+        // Create selection rectangle overlay
+        selectionRect = document.createElement('div');
+        selectionRect.className = 'canvas-selection-rect';
+        selectionRect.style.position = 'absolute';
+        selectionRect.style.border = '2px dashed #1976d2';
+        selectionRect.style.background = 'rgba(25, 118, 210, 0.1)';
+        selectionRect.style.pointerEvents = 'none';
+        selectionRect.style.zIndex = 1000;
+        selectionRect.style.left = startX + 'px';
+        selectionRect.style.top = startY + 'px';
+        selectionRect.style.width = '0px';
+        selectionRect.style.height = '0px';
+        canvas.parentNode.style.position = 'relative';
+        canvas.parentNode.appendChild(selectionRect);
+      };
+
+      canvas.onmousemove = function(e) {
+        if (!isSelecting || !selectionRect) return;
+        const rect = canvas.getBoundingClientRect();
+        endX = e.clientX - rect.left;
+        endY = e.clientY - rect.top;
+        const x = Math.min(startX, endX);
+        const y = Math.min(startY, endY);
+        const w = Math.abs(endX - startX);
+        const h = Math.abs(endY - startY);
+        selectionRect.style.left = x + 'px';
+        selectionRect.style.top = y + 'px';
+        selectionRect.style.width = w + 'px';
+        selectionRect.style.height = h + 'px';
+      };
+
+      canvas.onmouseup = async function(e) {
+        if (!isSelecting || !selectionRect) return;
+        isSelecting = false;
+        const rect = canvas.getBoundingClientRect();
+        endX = e.clientX - rect.left;
+        endY = e.clientY - rect.top;
+        const x = Math.round(Math.min(startX, endX));
+        const y = Math.round(Math.min(startY, endY));
+        const w = Math.round(Math.abs(endX - startX));
+        const h = Math.round(Math.abs(endY - startY));
+        if (w > 0 && h > 0) {
+          // Crop selected region from canvas
+          const cropCanvas = document.createElement('canvas');
+          cropCanvas.width = w;
+          cropCanvas.height = h;
+          const cropCtx = cropCanvas.getContext('2d');
+          cropCtx.drawImage(canvas, x, y, w, h, 0, 0, w, h);
+          const base64 = cropCanvas.toDataURL('image/png');
+          try {
+            await navigator.clipboard.writeText(base64);
+          } catch (err) {
+            const textarea = document.createElement('textarea');
+            textarea.value = base64;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+          }
+        }
+        selectionRect.remove();
+        selectionRect = null;
+      };
+
+      // Get text and image content
       const textContent = await page.getTextContent();
       textLayer.innerHTML = '';
       let firstSelectedIdx = null;
       let lastSelectedIdx = null;
       const spans = [];
+
+      // Render text items
       textContent.items.forEach((item, idx) => {
         const span = document.createElement('div');
         span.textContent = item.str;
@@ -402,6 +492,45 @@
         textLayer.appendChild(span);
         spans.push(span);
       });
+
+      // Render images in textLayer using XObjects
+      // PDF.js exposes images in page.getOperatorList, but browser context may not have page.objs.get. Instead, use page.getResources().
+      if (page.getResources) {
+        const resources = await page.getResources();
+        if (resources && resources.xObject) {
+          for (const [name, xObj] of Object.entries(resources.xObject)) {
+            if (xObj && xObj.image) {
+              const imgCanvas = document.createElement('canvas');
+              imgCanvas.width = xObj.width;
+              imgCanvas.height = xObj.height;
+              const imgCtx = imgCanvas.getContext('2d');
+              const imageData = imgCtx.createImageData(xObj.width, xObj.height);
+              imageData.data.set(xObj.image.data);
+              imgCtx.putImageData(imageData, 0, 0);
+
+              const imgElem = document.createElement('img');
+              imgElem.src = imgCanvas.toDataURL();
+              imgElem.style.maxWidth = '100px';
+              imgElem.style.maxHeight = '100px';
+              imgElem.classList.add('pdf-image-item');
+              imgElem.title = 'Click to copy image as base64';
+              imgElem.addEventListener('click', async () => {
+                try {
+                  await navigator.clipboard.writeText(imgElem.src);
+                } catch (err) {
+                  const textarea = document.createElement('textarea');
+                  textarea.value = imgElem.src;
+                  document.body.appendChild(textarea);
+                  textarea.select();
+                  document.execCommand('copy');
+                  document.body.removeChild(textarea);
+                }
+              });
+              textLayer.appendChild(imgElem);
+            }
+          }
+        }
+      }
     }
     // Hotkey support
     document.addEventListener('keydown', (e) => {
