@@ -439,6 +439,9 @@
         span.style.fontSize = fontSizeInput.value + 'px';
         span.classList.add('text-item');
         span.dataset.idx = idx;
+        //TODO: bold the text if end of line and ends with punctuation
+        if (item.str.match(/[\.\?\!]\s*$/))
+          span.style.fontWeight = 'bold';
 
         // Hover logic for block preview
         span.addEventListener('mouseenter', () => {
