@@ -104,8 +104,19 @@
       margin-bottom: 6px;
       user-select: none;
     }
+
     .text-item:hover {
       background-color:#a0c4ff;
+    }
+    .end-sentence {
+      font-weight: bold;
+    }
+    .inline {
+      display: inline;
+      padding-right: 2px;
+    }
+    .block {
+      display: block;
     }
     .selected {
       background-color:#ffc6a0;
@@ -114,10 +125,7 @@
     .hovered-block {
       background-color: #ffe6b0;
     }
-    .end-sentence {
-      /* border: 1px solid #0f9808; */
-      font-weight: bold;
-    }
+
     /* Selection rectangle for canvas */
     .canvas-selection-rect {
       position: absolute;
@@ -207,6 +215,8 @@
       <button data-tag="li">&lt;li&gt; [6]</button>
     </div>
     <input type="number" step="1" id="fontSizeInput" value="14" min="8" max="72" style="width: 60px; margin-left: 10px;" onchange="renderPage(currentPage)" />
+    <label for="chkInline" style="margin-left: 10px;">Inline: </label>
+    <input type="checkbox" id="chkInline">
   </div>
 
   <div class="flex">
@@ -233,13 +243,19 @@
     const fontSizeInput = document.getElementById('fontSizeInput');
     const commitBtn = document.getElementById('commitBtn');
     const clearBtn = document.getElementById('clearBtn');
+    const chkInline = document.getElementById('chkInline'); 
     let outputText = '';
 
     let pdf = null;
     let currentPage = 1;
     let totalPages = 0;
     let selectedTag = 'p';
+    let inline = false;
 
+    chkInline.onchange = function () {
+      inline = chkInline.checked;
+      renderPage(currentPage);
+    };
 
 
     // Update file name display (truncate if too long)
@@ -444,10 +460,14 @@
         span.textContent = item.str;
         span.style.fontSize = fontSizeInput.value + 'px';
         span.classList.add('text-item');
+        if (inline)
+          span.classList.add('inline')
         span.dataset.idx = idx;
 
         if (item.str.match(/[\.\?\!\:\'\"]\s*$|(?<=[\.\?\!])[)\]]\s*$/)) {
           span.classList.add('end-sentence');
+          if (inline)
+           span.classList.add('block')
         }
 
         // Hover logic for block preview
