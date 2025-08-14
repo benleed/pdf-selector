@@ -380,8 +380,11 @@
       canvas.onmousedown = function(e) {
         isSelecting = true;
         const rect = canvas.getBoundingClientRect();
-        startX = e.clientX - rect.left;
-        startY = e.clientY - rect.top;
+        // Scale mouse coordinates to canvas coordinates
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        startX = (e.clientX - rect.left) * scaleX;
+        startY = (e.clientY - rect.top) * scaleY;
 
         // Create selection rectangle overlay
         selectionRect = document.createElement('div');
@@ -391,8 +394,9 @@
         selectionRect.style.background = 'rgba(25, 118, 210, 0.1)';
         selectionRect.style.pointerEvents = 'none';
         selectionRect.style.zIndex = 1000;
-        selectionRect.style.left = startX + 'px';
-        selectionRect.style.top = startY + 'px';
+        // For overlay, use CSS pixel coordinates
+        selectionRect.style.left = (startX / scaleX) + 'px';
+        selectionRect.style.top = (startY / scaleY) + 'px';
         selectionRect.style.width = '0px';
         selectionRect.style.height = '0px';
         canvas.parentNode.style.position = 'relative';
@@ -402,12 +406,15 @@
       canvas.onmousemove = function(e) {
         if (!isSelecting || !selectionRect) return;
         const rect = canvas.getBoundingClientRect();
-        endX = e.clientX - rect.left;
-        endY = e.clientY - rect.top;
-        const x = Math.min(startX, endX);
-        const y = Math.min(startY, endY);
-        const w = Math.abs(endX - startX);
-        const h = Math.abs(endY - startY);
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        endX = (e.clientX - rect.left) * scaleX;
+        endY = (e.clientY - rect.top) * scaleY;
+        // For overlay, use CSS pixel coordinates
+        const x = Math.min(startX, endX) / scaleX;
+        const y = Math.min(startY, endY) / scaleY;
+        const w = Math.abs(endX - startX) / scaleX;
+        const h = Math.abs(endY - startY) / scaleY;
         selectionRect.style.left = x + 'px';
         selectionRect.style.top = y + 'px';
         selectionRect.style.width = w + 'px';
@@ -418,8 +425,10 @@
         if (!isSelecting || !selectionRect) return;
         isSelecting = false;
         const rect = canvas.getBoundingClientRect();
-        endX = e.clientX - rect.left;
-        endY = e.clientY - rect.top;
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        endX = (e.clientX - rect.left) * scaleX;
+        endY = (e.clientY - rect.top) * scaleY;
         const x = Math.round(Math.min(startX, endX));
         const y = Math.round(Math.min(startY, endY));
         const w = Math.round(Math.abs(endX - startX));
@@ -523,44 +532,7 @@
         spans.push(span);
       });
 
-      // Render images in textLayer using XObjects
-      // PDF.js exposes images in page.getOperatorList, but browser context may not have page.objs.get. Instead, use page.getResources().
-      if (page.getResources) {
-        const resources = await page.getResources();
-        if (resources && resources.xObject) {
-          for (const [name, xObj] of Object.entries(resources.xObject)) {
-            if (xObj && xObj.image) {
-              const imgCanvas = document.createElement('canvas');
-              imgCanvas.width = xObj.width;
-              imgCanvas.height = xObj.height;
-              const imgCtx = imgCanvas.getContext('2d');
-              const imageData = imgCtx.createImageData(xObj.width, xObj.height);
-              imageData.data.set(xObj.image.data);
-              imgCtx.putImageData(imageData, 0, 0);
 
-              const imgElem = document.createElement('img');
-              imgElem.src = imgCanvas.toDataURL();
-              imgElem.style.maxWidth = '100px';
-              imgElem.style.maxHeight = '100px';
-              imgElem.classList.add('pdf-image-item');
-              imgElem.title = 'Click to copy image as base64';
-              imgElem.addEventListener('click', async () => {
-                try {
-                  await navigator.clipboard.writeText(imgElem.src);
-                } catch (err) {
-                  const textarea = document.createElement('textarea');
-                  textarea.value = imgElem.src;
-                  document.body.appendChild(textarea);
-                  textarea.select();
-                  document.execCommand('copy');
-                  document.body.removeChild(textarea);
-                }
-              });
-              textLayer.appendChild(imgElem);
-            }
-          }
-        }
-      }
     }
     // Hotkey support
     document.addEventListener('keydown', (e) => {
